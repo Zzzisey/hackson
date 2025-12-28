@@ -1,0 +1,1550 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Find My Brilliant Friends | 找到你的天才女友</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;500&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        body {
+            font-family: 'Inter', 'Noto Serif SC', sans-serif;
+            overflow: hidden;
+            background-color: #0b0c15; 
+            color: #E2E8F0;
+        }
+
+        #scene-container {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 1; 
+            background: radial-gradient(circle at 50% 50%, #1a1c2e 0%, #0b0c15 100%);
+        }
+
+        .node-label {
+            font-family: 'Noto Serif SC', serif;
+            color: #ffffff; 
+            text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95);
+            pointer-events: auto; 
+            cursor: pointer;
+            margin-top: 18px; 
+            white-space: nowrap;
+            transition: all 0.5s cubic-bezier(0.19, 1, 0.22, 1); 
+            font-weight: 400;
+            letter-spacing: 0.05em;
+            font-size: 13px !important; 
+            padding: 2px 4px; 
+        }
+        .node-label:hover {
+            color: #fff;
+            transform: scale(1.1);
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
+        }
+        .node-label.active {
+            color: #fff;
+            text-shadow: 0 0 10px rgba(255, 255, 255, 1), 0 0 20px rgba(255, 255, 255, 0.8), 0 0 30px #7FB7E6;
+            font-weight: 600;
+            transform: scale(1.15);
+            letter-spacing: 0.1em;
+        }
+        
+        /* 待填充状态的闪烁文字 */
+        .pending-label {
+            font-family: 'Noto Serif SC', serif;
+            color: #94a3b8; /* Gray-400 */
+            font-size: 10px !important;
+            margin-top: 25px;
+            letter-spacing: 0.1em;
+            pointer-events: none;
+            animation: flash-gray 1.5s infinite alternate ease-in-out;
+        }
+        @keyframes flash-gray { from { opacity: 0.3; } to { opacity: 1; } }
+
+        .label-hidden { opacity: 0 !important; pointer-events: none !important; }
+
+        #loading-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: #0b0c15; z-index: 100; display: flex; flex-direction: column;
+            justify-content: center; align-items: center; transition: opacity 1.2s ease-out;
+        }
+        
+        .loading-text { 
+            color: #F2B6A0; 
+            text-shadow: 0 0 15px rgba(242, 182, 160, 0.3);
+            font-weight: 300;
+        }
+
+        #tooltip {
+            position: absolute; z-index: 20; 
+            background: rgba(20, 22, 35, 0.9); 
+            backdrop-filter: blur(10px); padding: 14px; border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4); 
+            pointer-events: none;
+            opacity: 0; transition: opacity 0.2s ease; max-width: 240px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #F2B6A0;
+        }
+
+        .sidebar-panel {
+            position: fixed; right: 0; top: 0; height: 100%; 
+            width: 100%; 
+            background: rgba(16, 18, 28, 0.95); 
+            backdrop-filter: blur(20px);
+            box-shadow: -10px 0 40px rgba(0,0,0,0.5);
+            z-index: 40;
+            display: flex; flex-direction: column;
+            border-left: 1px solid rgba(255, 255, 255, 0.05);
+            transform: translateX(120%);
+            transition: transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+            color: #e0e7ff; 
+        }
+        
+        @media (min-width: 768px) { .sidebar-panel { width: 33.333333%; } }
+        .sidebar-panel.active { transform: translateX(0); }
+
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        .animate-pulse-btn { animation: pulse-light 4s infinite ease-in-out; }
+        @keyframes pulse-light {
+            0% { box-shadow: 0 0 0 0 rgba(242, 182, 160, 0.2); } 
+            50% { box-shadow: 0 0 0 6px rgba(242, 182, 160, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(242, 182, 160, 0); }
+        }
+
+        .input-underline { transition: width 0.4s ease; width: 0%; height: 1px; background: #7FB7E6; }
+        .input-group:focus-within .input-underline { width: 100%; }
+        
+        .fade-enter { animation: fadeIn 0.6s forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .dark-input {
+            background-color: rgba(255, 255, 255, 0.04);
+            border-color: rgba(255, 255, 255, 0.1);
+            color: #e0e7ff;
+            font-family: 'Noto Serif SC', serif;
+        }
+        .dark-input::placeholder { color: rgba(127, 183, 230, 0.3); }
+        .dark-input:focus { border-color: #7FB7E6; background-color: rgba(255, 255, 255, 0.08); }
+    </style>
+</head>
+<body>
+
+    <div id="loading-screen">
+        <div class="font-serif text-3xl tracking-widest loading-text">Find My Brilliant Friends</div>
+        <div class="mt-4 text-xs text-slate-500 font-mono tracking-[0.2em]">正在进入静谧空间...</div>
+    </div>
+
+    <nav class="fixed top-0 w-full z-50 px-8 py-6 flex justify-between items-center pointer-events-none">
+        <div class="flex items-center gap-3 pointer-events-auto cursor-pointer hover:opacity-80 transition duration-300" onclick="resetView()">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" class="text-[#7FB7E6]">
+                <circle cx="12" cy="12" r="6" stroke="currentColor" stroke-width="1.5"/>
+                <circle cx="12" cy="12" r="2" fill="currentColor" fill-opacity="0.8"/>
+            </svg>
+            <span class="font-serif text-lg tracking-wider hidden md:block text-[#E2E8F0] font-light">找到你的天才女友</span>
+        </div>
+
+        <div class="flex gap-6 pointer-events-auto">
+            <button id="btn-search" class="flex items-center gap-2 text-sm font-light text-slate-300 hover:text-[#7FB7E6] transition duration-300 group bg-white/5 backdrop-blur-sm border border-white/10 px-4 py-2 rounded-full hover:bg-white/10 hover:border-[#7FB7E6]/30">
+                <i data-lucide="search" class="w-4 h-4 group-hover:scale-110 transition duration-300"></i>
+                <span>找到她</span>
+            </button>
+            <button id="btn-profile" class="flex items-center gap-2 text-sm font-light text-slate-300 hover:text-[#F2B6A0] transition duration-300 group bg-white/5 backdrop-blur-sm border border-white/10 px-5 py-2 rounded-full hover:bg-white/10 hover:border-[#F2B6A0]/30">
+                <i data-lucide="sparkles" class="w-4 h-4 text-[#F2B6A0] group-hover:rotate-12 transition duration-300"></i>
+                <span>成为她</span>
+            </button>
+        </div>
+    </nav>
+
+    <div id="scene-container"></div>
+
+    <!-- 左下角：定位到我 (Locate Me) -->
+    <button id="btn-locate-me" class="fixed bottom-10 left-10 z-30 p-3 rounded-full bg-[#10121c]/80 backdrop-blur-md border border-white/10 text-slate-400 hover:text-white hover:border-white/30 hover:bg-white/10 shadow-2xl transition-all duration-300 group" title="定位我的星标">
+        <i data-lucide="crosshair" class="w-6 h-6 group-hover:rotate-90 transition duration-500"></i>
+    </button>
+
+    <div id="legend-container" class="fixed bottom-10 right-10 z-30 flex flex-col gap-4 bg-[#10121c]/80 backdrop-blur-md px-6 py-5 rounded-xl border border-white/10 shadow-xl transition-all duration-700 transform pointer-events-none select-none text-slate-400">
+        <div class="flex items-center gap-3">
+            <span class="w-2.5 h-2.5 rounded-full bg-[#7FB7E6]"></span>
+            <span class="text-xs font-light tracking-wider">公众图鉴</span>
+        </div>
+        <div class="flex items-center gap-3">
+            <span class="w-2.5 h-2.5 rounded-full bg-[#F2B6A0]"></span>
+            <span class="text-xs font-light tracking-wider">个人档案</span>
+        </div>
+    </div>
+
+    <div id="tooltip">
+        <h3 class="font-normal text-[#9FA7E8] text-sm font-serif tracking-wide" id="tt-name">Name</h3>
+        <p class="text-xs text-slate-400 mt-2 font-mono font-light"><span id="tt-year">1900</span> <span class="mx-1">·</span> <span id="tt-role">Role</span></p>
+    </div>
+
+    <!-- Sidebar -->
+    <div id="node-sidebar" class="sidebar-panel">
+        <button onclick="resetView()" class="absolute top-8 left-8 p-2 hover:bg-white/5 rounded-full transition duration-300 z-20 group" title="关闭">
+            <i data-lucide="x" class="w-5 h-5 text-slate-500 group-hover:text-[#F2B6A0] transition"></i>
+        </button>
+
+        <div id="sidebar-search-header" class="hidden px-10 pt-24 pb-6 border-b border-white/5 bg-transparent">
+            <div class="relative">
+                <i data-lucide="search" class="absolute left-3 top-3 w-5 h-5 text-slate-500"></i>
+                <input type="text" id="search-input" class="w-full dark-input border rounded-xl pl-10 pr-4 py-3 outline-none transition text-sm font-light tracking-wide" placeholder="搜索一段际遇...">
+            </div>
+            <div id="search-status" class="mt-3 text-xs text-slate-500 h-4 font-light">输入关键词，寻找共鸣</div>
+        </div>
+
+        <div id="sidebar-scroll-area" class="overflow-y-auto flex-1 p-10 no-scrollbar relative">
+            <div id="search-placeholder" class="hidden h-full flex flex-col items-center justify-center text-slate-600 space-y-4 opacity-0 transition-opacity duration-700">
+                <i data-lucide="moon" class="w-10 h-10 stroke-1 opacity-50"></i>
+                <p class="text-sm font-light tracking-widest">在星海中静静聆听...</p>
+            </div>
+
+            <div id="sidebar-content" class="transition-opacity duration-500 pt-12">
+                <div class="flex items-start gap-6 mb-10 mt-4 md:mt-0">
+                    <div>
+                        <h1 class="text-3xl font-serif font-normal text-[#E2E8F0] tracking-wide" id="sb-name">Name</h1>
+                        <div class="text-sm text-[#7FB7E6] font-mono mt-2 opacity-90" id="sb-years">Years</div>
+                        <div class="flex flex-wrap gap-2 mt-4" id="sb-tags"></div>
+                    </div>
+                </div>
+                <div class="space-y-10">
+                    <div class="p-8 bg-white/5 rounded-2xl border border-white/5">
+                        <div class="grid grid-cols-1 gap-y-6">
+                            <div><div class="text-[10px] text-slate-500 uppercase tracking-widest mb-1">行业</div><div class="font-light text-slate-200" id="sb-industry">Industry</div></div>
+                            <div><div class="text-[10px] text-slate-500 uppercase tracking-widest mb-1">职业</div><div class="font-light text-slate-200" id="sb-occupation">Occupation</div></div>
+                            <div><div class="text-[10px] text-slate-500 uppercase tracking-widest mb-1">核心成就</div><div class="text-sm font-light text-slate-300 leading-loose" id="sb-achievement">Text.</div></div>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <h3 class="text-lg font-serif font-normal text-[#F2B6A0] mb-4 flex items-center gap-2"><i data-lucide="feather" class="w-4 h-4 opacity-70"></i> 生平故事</h3>
+                        <p class="text-slate-400 text-sm leading-8 text-justify font-light" id="sb-bio">Bio...</p>
+                    </div>
+
+                    <div class="border-t border-white/5 pt-8">
+                        <h3 class="text-[10px] text-slate-500 uppercase tracking-widest mb-4">关联人</h3>
+                        <div id="sb-connections-list" class="space-y-3"></div>
+                    </div>
+
+                    <div class="border-t border-white/5 pt-8 pb-20">
+                        <h3 class="text-sm font-light text-slate-500 mb-4 tracking-wide">温暖留言</h3>
+                        <div class="bg-[#0b0c15]/50 border border-white/5 rounded-xl p-5 shadow-inner mb-4">
+                            <textarea placeholder="在这里留下你的温暖..." class="w-full text-sm resize-none outline-none text-slate-300 placeholder:text-slate-700 bg-transparent font-light" rows="3"></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="pagination-controls" class="absolute bottom-12 left-14 right-14 bg-[#10121c]/90 backdrop-blur-xl text-slate-300 rounded-full px-8 py-4 flex justify-between items-center shadow-lg z-50 transition-all duration-500 translate-y-full opacity-0 border border-white/5">
+            <div class="flex flex-col"><span class="text-[10px] text-slate-500 uppercase tracking-widest">Matches</span><span class="text-sm font-mono font-light"><span id="page-current">1</span> / <span id="page-total">10</span></span></div>
+            <div class="flex gap-4">
+                <button id="btn-prev" class="p-2 hover:bg-white/5 rounded-full transition duration-300"><i data-lucide="chevron-up" class="w-5 h-5 text-[#7FB7E6]"></i></button>
+                <button id="btn-next" class="p-2 hover:bg-white/5 rounded-full transition duration-300"><i data-lucide="chevron-down" class="w-5 h-5 text-[#7FB7E6]"></i></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Personal Center -->
+    <div id="personal-center" class="sidebar-panel z-50">
+        <button onclick="resetView()" class="absolute top-8 left-8 p-2 hover:bg-white/5 rounded-full transition duration-300 z-10 group md:hidden">
+            <i data-lucide="arrow-left" class="w-5 h-5 text-slate-500 group-hover:text-[#F2B6A0]"></i>
+        </button>
+        <button onclick="resetView()" class="absolute top-8 right-8 p-2 hover:bg-white/5 rounded-full transition duration-300 z-10 group" title="关闭">
+            <i data-lucide="x" class="w-5 h-5 text-slate-500 group-hover:text-[#F2B6A0]"></i>
+        </button>
+
+        <div class="flex-1 overflow-y-auto no-scrollbar relative">
+            <div id="pc-form-container" class="px-10 py-24 transition-all duration-700">
+                <div class="text-center mb-16">
+                    <h2 class="text-3xl font-serif font-light text-[#E2E8F0] mb-4 tracking-wide">点亮你的星辰</h2>
+                    <p class="text-slate-500 text-sm font-light tracking-wider">在温柔的宇宙中，安放你的灵魂坐标。</p>
+                </div>
+
+                <div id="step-1-account" class="fade-enter space-y-8">
+                    <div class="space-y-8">
+                        <div class="input-group">
+                            <label class="block text-xs font-medium text-slate-500 uppercase mb-3 tracking-widest">电子邮箱</label>
+                            <input type="email" id="reg-email" class="w-full py-3 bg-transparent border-b border-slate-700 outline-none text-[#E2E8F0] text-lg placeholder:text-slate-700 focus:border-[#F2B6A0] transition duration-300 font-light" placeholder="name@example.com">
+                        </div>
+                        <div class="input-group">
+                            <label class="block text-xs font-medium text-slate-500 uppercase mb-3 tracking-widest">设置密码</label>
+                            <input type="password" id="reg-pass" class="w-full py-3 bg-transparent border-b border-slate-700 outline-none text-[#E2E8F0] text-lg placeholder:text-slate-700 focus:border-[#F2B6A0] transition duration-300 font-light" placeholder="••••••••">
+                        </div>
+                    </div>
+                    <div class="pt-8 text-center">
+                        <button onclick="goToStep2()" class="bg-[#F2B6A0] text-[#1a1b26] px-12 py-4 rounded-full text-sm font-medium shadow-[0_0_20px_rgba(242,182,160,0.15)] hover:bg-[#E8A3A8] hover:shadow-[0_0_25px_rgba(242,182,160,0.3)] transition duration-300 w-full flex items-center justify-center gap-3 tracking-wide">
+                            下一步 <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                        </button>
+                        <div class="mt-6 text-xs text-slate-500">
+                            已有账号，<a href="#" onclick="switchAuthMode('login')" class="text-[#7FB7E6] hover:text-white hover:underline transition">去登录</a>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="step-login" class="hidden space-y-8 fade-enter">
+                    <div class="space-y-8">
+                        <div class="input-group">
+                            <label class="block text-xs font-medium text-slate-500 uppercase mb-3 tracking-widest">电子邮箱</label>
+                            <input type="email" class="w-full py-3 bg-transparent border-b border-slate-700 outline-none text-[#E2E8F0] text-lg placeholder:text-slate-700 focus:border-[#F2B6A0] transition duration-300 font-light" placeholder="name@example.com">
+                        </div>
+                        <div class="input-group">
+                            <label class="block text-xs font-medium text-slate-500 uppercase mb-3 tracking-widest">密码</label>
+                            <input type="password" class="w-full py-3 bg-transparent border-b border-slate-700 outline-none text-[#E2E8F0] text-lg placeholder:text-slate-700 focus:border-[#F2B6A0] transition duration-300 font-light" placeholder="••••••••">
+                        </div>
+                    </div>
+                    <div class="pt-8 text-center">
+                        <button onclick="doLogin()" class="bg-[#F2B6A0] text-[#1a1b26] px-12 py-4 rounded-full text-sm font-medium shadow-[0_0_20px_rgba(242,182,160,0.15)] hover:bg-[#E8A3A8] hover:shadow-[0_0_25px_rgba(242,182,160,0.3)] transition duration-300 w-full flex items-center justify-center gap-3 tracking-wide">
+                            确认登录
+                        </button>
+                        <div class="mt-6 text-xs text-slate-500">
+                            还没有账号？<a href="#" onclick="switchAuthMode('register')" class="text-[#7FB7E6] hover:text-white hover:underline transition">去注册</a>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="step-2-info" class="hidden space-y-8">
+                    <div class="space-y-8">
+                         <div class="input-group">
+                            <label class="block text-xs font-medium text-slate-500 uppercase mb-3 tracking-widest">姓名 / 昵称</label>
+                            <input type="text" id="inp-name" class="w-full py-3 bg-transparent border-b border-slate-700 outline-none text-[#E2E8F0] font-serif text-lg placeholder:text-slate-700 focus:border-[#7FB7E6] transition duration-300" placeholder="Your Name">
+                        </div>
+                        <div class="input-group">
+                            <label class="block text-xs font-medium text-slate-500 uppercase mb-3 tracking-widest">生年</label>
+                            <input type="text" id="inp-year" class="w-full py-3 bg-transparent border-b border-slate-700 outline-none text-[#E2E8F0] font-mono placeholder:text-slate-700 focus:border-[#7FB7E6] transition duration-300" placeholder="e.g. 1995">
+                        </div>
+                         <div class="input-group">
+                            <label class="block text-xs font-medium text-slate-500 uppercase mb-3 tracking-widest">行业</label>
+                            <input type="text" id="inp-industry" class="w-full py-3 bg-transparent border-b border-slate-700 outline-none text-[#E2E8F0] placeholder:text-slate-700 focus:border-[#7FB7E6] transition duration-300 font-light" placeholder="e.g. Design">
+                        </div>
+                        <div class="input-group">
+                            <label class="block text-xs font-medium text-slate-500 uppercase mb-3 tracking-widest">职业</label>
+                            <input type="text" id="inp-job" class="w-full py-3 bg-transparent border-b border-slate-700 outline-none text-[#E2E8F0] placeholder:text-slate-700 focus:border-[#7FB7E6] transition duration-300 font-light" placeholder="e.g. Architect">
+                        </div>
+                        <div class="input-group">
+                            <label class="block text-xs font-medium text-slate-500 uppercase mb-3 tracking-widest">个人成就 / 闪光点</label>
+                            <textarea id="inp-achieve" rows="3" class="w-full py-3 bg-transparent border-b border-slate-700 outline-none text-[#E2E8F0] resize-none placeholder:text-slate-700 focus:border-[#7FB7E6] transition duration-300 font-light leading-relaxed" placeholder="不一定是宏大的成就，那些微小而坚持的光芒..."></textarea>
+                        </div>
+                    </div>
+
+                    <div class="bg-white/5 p-6 rounded-2xl border border-white/5">
+                        <div class="flex items-center gap-2 mb-6">
+                            <i data-lucide="lock" class="w-4 h-4 text-slate-500"></i>
+                            <span class="text-xs font-medium text-slate-500 tracking-wide">仅对互相关注者可见</span>
+                        </div>
+                        <div class="space-y-5">
+                            <input type="text" class="w-full dark-input px-5 py-3 rounded-xl border border-slate-700 text-sm outline-none transition" placeholder="WeChat ID">
+                            <input type="text" disabled class="w-full bg-slate-800/50 px-5 py-3 rounded-xl border border-slate-800 text-sm text-slate-600" value="Email 已绑定" id="display-email">
+                        </div>
+                    </div>
+                    <div class="pt-6 text-center">
+                        <button onclick="createProfile()" class="animate-pulse-btn bg-[#E2E8F0] text-[#1a1b26] w-full py-4 rounded-full text-sm font-bold tracking-widest hover:bg-[#F2B6A0] transition duration-500 shadow-xl">
+                            确认创建 · 加入星系
+                        </button>
+                        <button onclick="backToStep1()" class="block mx-auto mt-6 text-xs text-slate-500 hover:text-slate-300 underline transition duration-300">返回上一步</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="pc-view-container" class="hidden h-full flex flex-col">
+                <div class="bg-gradient-to-br from-[#1E1B2E] to-[#151419] p-10 border-b border-white/5">
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <span class="inline-block px-4 py-1.5 rounded-full bg-[#F2B6A0]/10 text-[#F2B6A0] text-[10px] font-medium mb-3 border border-[#F2B6A0]/20 tracking-wider">我的档案</span>
+                            <h1 class="text-4xl font-serif font-light text-[#E2E8F0] mb-2 tracking-wide" id="pv-name">Name</h1>
+                            <p class="text-slate-500 font-mono text-sm" id="pv-info">1995 · Designer</p>
+                        </div>
+                        <button onclick="editProfile()" class="text-xs border border-white/10 text-slate-400 px-5 py-2.5 rounded-full hover:bg-white/5 hover:text-white transition duration-300 flex items-center gap-2">
+                            <i data-lucide="edit-2" class="w-3 h-3"></i> 编辑
+                        </button>
+                    </div>
+                    <div class="mt-10 p-8 bg-[#000000]/20 backdrop-blur-md rounded-2xl border border-white/5 shadow-inner">
+                        <h3 class="text-[10px] font-medium text-slate-600 uppercase tracking-widest mb-3">我的光芒</h3>
+                        <p class="text-slate-300 leading-loose text-sm font-light" id="pv-achieve">Content...</p>
+                    </div>
+                </div>
+                <div class="flex-1 bg-[#151419]/50 p-10 space-y-10">
+                    <div class="space-y-5">
+                        <div class="flex justify-between items-center">
+                            <h3 class="text-lg font-serif font-light text-slate-200">成长日记</h3>
+                            <button class="text-[#7FB7E6] text-sm font-light hover:underline flex items-center gap-2 opacity-80 hover:opacity-100 transition"><i data-lucide="plus" class="w-4 h-4"></i> 写一篇</button>
+                        </div>
+                        <div class="border-l border-slate-800 pl-8 py-2">
+                            <div class="relative">
+                                <div class="absolute -left-[33px] top-1.5 w-2.5 h-2.5 rounded-full bg-[#F2B6A0] ring-4 ring-[#151419]"></div>
+                                <div class="text-[10px] text-slate-600 mb-2 font-mono uppercase tracking-wider">Today</div>
+                                <p class="text-slate-400 text-sm font-light leading-relaxed">加入了 Find My Brilliant Friends，感觉像回到了家。</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="space-y-5">
+                        <h3 class="text-lg font-serif font-light text-slate-200">谁看过我</h3>
+                        <div class="bg-white/2 rounded-2xl p-8 h-32 flex flex-col justify-center items-center text-center border border-white/5 border-dashed">
+                            <p class="text-slate-600 text-xs font-light tracking-wide">暂无访客，也许你该先去看看别人</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/renderers/CSS2DRenderer.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+
+    <script>
+        lucide.createIcons();
+
+        const state = {
+            view: 'home',
+            hasProfile: false,
+            userNodeId: null,
+            search: { active: false, results: [], currentIndex: 0 }
+        };
+        
+        let currentUserProfile = {
+            name: '', year: '', industry: '', job: '', achieve: ''
+        };
+
+        const scene = new THREE.Scene(); 
+        scene.fog = new THREE.FogExp2(0x0b0c15, 0.0004); 
+        
+        const camera = new THREE.PerspectiveCamera(25, window.innerWidth / window.innerHeight, 1, 4000); 
+        camera.position.z = 850; 
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" }); 
+        renderer.setSize(window.innerWidth, window.innerHeight); 
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); 
+        renderer.toneMapping = THREE.ReinhardToneMapping;
+        renderer.toneMappingExposure = 1.2;
+        document.getElementById('scene-container').appendChild(renderer.domElement);
+        
+        const labelRenderer = new THREE.CSS2DRenderer(); 
+        labelRenderer.setSize(window.innerWidth, window.innerHeight); 
+        labelRenderer.domElement.style.position = 'absolute'; 
+        labelRenderer.domElement.style.top = '0px'; 
+        labelRenderer.domElement.style.pointerEvents = 'none'; 
+        document.getElementById('scene-container').appendChild(labelRenderer.domElement);
+        
+        // 初始化OrbitControls
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.screenSpacePanning = false;
+        controls.minDistance = 100;
+        controls.maxDistance = 2000;
+        controls.maxPolarAngle = Math.PI;
+        
+        const galaxyGroup = new THREE.Group(); 
+        scene.add(galaxyGroup); 
+        const nodeMeshes = []; 
+        const connectionLines = new THREE.Group(); 
+        galaxyGroup.add(connectionLines);
+        const tempV = new THREE.Vector3();
+
+        const ambientLight = new THREE.AmbientLight(0x899bb5, 0.8); 
+        scene.add(ambientLight);
+        
+        const mainLight = new THREE.DirectionalLight(0xffecd1, 1.2);
+        mainLight.position.set(100, 50, 100);
+        scene.add(mainLight);
+
+        const rimLight = new THREE.DirectionalLight(0x60a5fa, 0.5);
+        rimLight.position.set(-100, 50, -100);
+        scene.add(rimLight);
+
+        const sphereGeometry = new THREE.SphereGeometry(1, 48, 48);
+        const baseMaterialConfig = {
+            roughness: 0.45, 
+            metalness: 0.0,
+            transmission: 0.0, 
+            opacity: 0.95,
+            transparent: true,
+            side: THREE.FrontSide,
+        };
+
+        const matHealing = new THREE.MeshPhysicalMaterial({ ...baseMaterialConfig, color: 0x7FB7E6, emissive: 0x2c3e50, emissiveIntensity: 0.2 });
+        const matWarmth = new THREE.MeshPhysicalMaterial({ ...baseMaterialConfig, color: 0xF2B6A0, emissive: 0x4a2c2a, emissiveIntensity: 0.2 });
+        const matActive = new THREE.MeshPhysicalMaterial({ ...baseMaterialConfig, color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.2 });
+
+        // Dashed circle texture for "Locate Me" placeholder
+        function createDashedCircleTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 128; canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+            
+            ctx.beginPath();
+            ctx.arc(64, 64, 50, 0, Math.PI * 2);
+            ctx.lineWidth = 4;
+            ctx.strokeStyle = '#94a3b8'; // Gray-400
+            ctx.setLineDash([10, 10]);
+            ctx.stroke();
+
+            // Plus icon
+            ctx.beginPath();
+            ctx.moveTo(64, 40); ctx.lineTo(64, 88);
+            ctx.moveTo(40, 64); ctx.lineTo(88, 64);
+            ctx.setLineDash([]);
+            ctx.stroke();
+
+            return new THREE.CanvasTexture(canvas);
+        }
+        const matPlaceholder = new THREE.SpriteMaterial({ map: createDashedCircleTexture(), transparent: true, opacity: 0.8 });
+
+        function createClearGlowTexture(colorStr) {
+            const canvas = document.createElement('canvas'); canvas.width = 128; canvas.height = 128; const ctx = canvas.getContext('2d');
+            const gradient = ctx.createRadialGradient(64, 64, 28, 64, 64, 64);
+            gradient.addColorStop(0.0, colorStr); gradient.addColorStop(0.3, colorStr.replace('0.4', '0.1')); gradient.addColorStop(1.0, 'rgba(0,0,0,0)');
+            ctx.fillStyle = gradient; ctx.fillRect(0,0,128,128);
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        const glowHealing = new THREE.SpriteMaterial({ map: createClearGlowTexture('rgba(127, 183, 230, 0.4)'), blending: THREE.AdditiveBlending, depthWrite: false });
+        const glowWarmth = new THREE.SpriteMaterial({ map: createClearGlowTexture('rgba(242, 182, 160, 0.4)'), blending: THREE.AdditiveBlending, depthWrite: false });
+        const glowActive = new THREE.SpriteMaterial({ map: createClearGlowTexture('rgba(255, 255, 255, 0.5)'), blending: THREE.AdditiveBlending, depthWrite: false });
+
+        // 从后端API获取真实数据
+        let nodesData = [];
+        
+        // 加载节点数据的函数 - 使用原始API
+        async function loadNodesData() {
+            try {
+                // 从localStorage获取token
+                const token = localStorage.getItem('access_token');
+                
+                // 使用原始API端点
+                const response = await fetch('http://localhost:8000/api/graph/network', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                // 检查响应状态
+                if (!response.ok) {
+                    throw new Error(`API返回错误: ${response.status} ${response.statusText}`);
+                }
+                
+                const graphData = await response.json();
+                
+                // 检查graphData是否有效
+                if (!graphData || !graphData.nodes) {
+                    console.warn('API返回的数据格式不正确:', graphData);
+                    // 使用空数组继续执行，而不是抛出错误
+                    graphData.nodes = [];
+                    graphData.edges = [];
+                }
+                
+                // 保存数据到nodesData变量，供搜索功能使用
+                nodesData = graphData.nodes.map(node => ({
+                    ...node.properties,
+                    id: node.id,
+                    name: node.properties?.name || '未知',
+                    years: node.properties?.birth_year && node.properties?.death_year ? 
+                          `${node.properties.birth_year}-${node.properties.death_year}` : 
+                          (node.properties?.birth_year ? `${node.properties.birth_year}-至今` : '未知'),
+                    industry: node.properties?.specialty ? (Array.isArray(node.properties.specialty) ? node.properties.specialty[0] : node.properties.specialty) : node.properties?.type || '未知',
+                    occupation: node.properties?.occupation ? (Array.isArray(node.properties.occupation) ? node.properties.occupation[0] : node.properties.occupation) : '未知',
+                    achievement: node.properties?.achievement || '暂无成就描述'
+                }));
+                
+                // 清空现有节点
+                nodeMeshes.forEach(mesh => {
+                    mesh.geometry.dispose();
+                    if (mesh.material && mesh.material.dispose) mesh.material.dispose();
+                    if (mesh.userData.glow) {
+                        mesh.userData.glow.material.dispose();
+                        mesh.remove(mesh.userData.glow);
+                    }
+                    if (mesh.userData.label) {
+                        mesh.remove(mesh.userData.label);
+                    }
+                    galaxyGroup.remove(mesh);
+                });
+                nodeMeshes.length = 0;
+                
+                // 创建新节点
+                graphData.nodes.forEach((node, i) => {
+                    const properties = node.properties || {};
+                    // 判断节点类型：user节点用蓝色，system/public节点用橙色
+                    const isUserNode = properties.source_type === 'system';
+                    
+                    // 根据节点类型选择材质
+                    let material, glowMaterial;
+                    if (isUserNode) {
+                        material = matHealing.clone();      // 蓝色 - 个人档案
+                        glowMaterial = glowActive.clone();
+                    } else {
+                        material = matWarmth.clone();       // 橙色 - 公众图鉴
+                        glowMaterial = glowActive.clone();
+                    }
+                    
+                    const mesh = new THREE.Mesh(sphereGeometry, material);
+                    
+                    // 生成随机位置
+                    const angle = Math.random() * Math.PI * 2;
+                    const radius = 50 + Math.pow(Math.random(), 0.9) * 380; 
+                    const spreadY = (Math.random() - 0.5) * 120; 
+                    const x = Math.cos(angle) * radius; 
+                    const z = Math.sin(angle) * radius; 
+                    const y = spreadY;
+
+                    mesh.position.set(x, y, z);
+                    
+                    // 设置初始大小 - 使用随机大小，不依赖属性
+                    const originalScale = (Math.random() * 0.8 + 0.6) * 1.3 * 1.2;
+                    mesh.scale.set(originalScale, originalScale, originalScale);
+                    
+                    // 保存节点数据
+                    mesh.userData = { 
+                        ...properties, 
+                        id: node.id || `node-${i}`,
+                        name: properties.name || '未知',
+                        type: isUserNode ? 'healing' : 'warmth',
+                        years: properties.birth_year && properties.death_year ? 
+                              `${properties.birth_year}-${properties.death_year}` : 
+                              (properties.birth_year ? `${properties.birth_year}-至今` : '未知'),
+                        industry: properties.specialty ? (Array.isArray(properties.specialty) ? properties.specialty[0] : properties.specialty) : properties.type || '未知',
+                        occupation: properties.occupation ? (Array.isArray(properties.occupation) ? properties.occupation[0] : properties.occupation) : '未知',
+                        achievement: properties.achievement || '暂无成就描述',
+                        originalScale: originalScale,
+                        phase: Math.random() * Math.PI * 2 
+                    };
+                    
+                    // 添加发光效果
+                    const sprite = new THREE.Sprite(glowActive.clone());
+                    sprite.scale.set(originalScale * 3.5, originalScale * 3.5, 1);
+                    mesh.add(sprite); 
+                    mesh.userData.glow = sprite; 
+
+                    galaxyGroup.add(mesh); 
+                    nodeMeshes.push(mesh);
+                    
+                    // 添加标签（每隔5个展示一个标签，从1号开始）
+                    // if((i - 1) % 5 === 0){ 
+                    const d=document.createElement('div'); 
+                    d.className='node-label'; 
+                    d.textContent=mesh.userData.name; 
+                    d.addEventListener('click', (e) => { e.stopPropagation(); if(state.view === 'search') exitSearchMode(); openNodeDetail(mesh); });
+                    d.addEventListener('mouseenter', () => { hoveredNode = mesh; document.body.style.cursor = 'pointer'; });
+                    d.addEventListener('mouseleave', () => { hoveredNode = null; document.body.style.cursor = 'default'; });
+                    const l=new THREE.CSS2DObject(d); l.position.set(0, -2.0, 0); 
+                    mesh.add(l); mesh.userData.label = l;
+                    
+                });
+                
+                // 如果有节点，设置第一个节点为较大尺寸
+                if (nodeMeshes.length > 0) {
+                    nodeMeshes[0].userData.originalScale = 3.9 * 1.2;
+                    nodeMeshes[0].scale.set(3.9 * 1.2, 3.9 * 1.2, 3.9 * 1.2);
+                }
+                
+            } catch (error) {
+                console.error('Failed to load nodes data:', error);
+                
+                // 如果API调用失败，显示警告但继续运行
+                console.warn('API调用失败，应用将继续使用空数据运行:', error.message);
+                
+                // 清空nodesData
+                nodesData = [];
+                
+                // 清空现有节点
+                nodeMeshes.forEach(mesh => {
+                    mesh.geometry.dispose();
+                    if (mesh.material && mesh.material.dispose) mesh.material.dispose();
+                    if (mesh.userData.glow) {
+                        mesh.userData.glow.material.dispose();
+                        mesh.remove(mesh.userData.glow);
+                    }
+                    if (mesh.userData.label) {
+                        mesh.remove(mesh.userData.label);
+                    }
+                    galaxyGroup.remove(mesh);
+                });
+                nodeMeshes.length = 0;
+            }
+        }
+        
+        // 初始化时加载数据
+        loadNodesData();
+
+        function getVisibleWidth(depth, camera) {
+            const height = 2 * Math.tan( ( camera.fov * Math.PI / 180 ) / 2 ) * ( camera.position.z - depth );
+            return height * camera.aspect;
+        }
+
+        const raycaster = new THREE.Raycaster(); const mouse = new THREE.Vector2();
+        let hoveredNode=null; let isDragging=false; let prevMouse={x:0,y:0};
+        const elLegend = document.getElementById('legend-container'); 
+        let globalPulse = { value: 1.0 }; 
+
+        window.addEventListener('mousemove', e=>{
+            mouse.x=(e.clientX/window.innerWidth)*2-1; mouse.y=-(e.clientY/window.innerHeight)*2+1;
+            if(hoveredNode){ document.getElementById('tooltip').style.left=e.clientX+15+'px'; document.getElementById('tooltip').style.top=e.clientY+15+'px'; }
+            if(isDragging && state.view==='home'){ galaxyGroup.rotation.y+=(e.clientX-prevMouse.x)*0.002; galaxyGroup.rotation.x+=(e.clientY-prevMouse.y)*0.002; }
+            prevMouse={x:e.clientX,y:e.clientY};
+        });
+        window.addEventListener('mousedown', ()=>isDragging=true); window.addEventListener('mouseup', ()=>isDragging=false);
+        window.addEventListener('click', e=>{
+            if(Math.abs(e.movementX)>2 || state.view==='personal-center') return;
+            if(state.view==='search' && !e.target.closest('#node-sidebar')) return;
+            if (e.target.classList.contains('node-label')) return;
+            raycaster.setFromCamera(mouse,camera); const ints=raycaster.intersectObjects(nodeMeshes);
+            if(ints.length>0){ if(state.view==='search') exitSearchMode(); openNodeDetail(ints[0].object); }
+        });
+
+        document.getElementById('btn-profile').addEventListener('click', openPersonalCenter);
+        document.getElementById('btn-search').addEventListener('click', openSearchMode);
+        document.getElementById('search-input').addEventListener('keypress', function(e){ if(e.key==='Enter') performSearch(this.value); });
+        document.getElementById('btn-prev').addEventListener('click', ()=>navSearch(-1));
+        document.getElementById('btn-next').addEventListener('click', ()=>navSearch(1));
+        
+        // Locate Me Button Logic
+            document.getElementById('btn-locate-me').addEventListener('click', () => {
+                if (state.hasProfile && state.userNodeId) {
+                    if(state.view === 'search') exitSearchMode();
+                    openNodeDetail(state.userNodeId);
+                } else {
+                    openPersonalCenter();
+                }
+            });
+
+        function openNodeDetail(node){
+            state.view='node-detail';
+            document.getElementById('personal-center').classList.remove('active');
+            highlightNode(node);
+            document.getElementById('node-sidebar').classList.add('active');
+            elLegend.classList.add('opacity-0', 'translate-y-4');
+        }
+
+        function updateSidebar(d, connections){
+            // 更新侧边栏信息 - 修复空值显示问题
+            const safeText = (text, defaultValue = '未知') => {
+                return text && text.toString().trim() ? text : defaultValue;
+            };
+            
+            document.getElementById('sb-name').innerText = safeText(d.name, '未知');
+            document.getElementById('sb-years').innerText = safeText(d.years, `${d.birth_year || ''}-${d.death_year || '至今'}`);
+            
+            // 处理industry字段
+            let industryText = '未知';
+            if (d.industry && d.industry.toString().trim()) {
+                industryText = d.industry;
+            } else if (d.specialty) {
+                if (Array.isArray(d.specialty) && d.specialty[0] && d.specialty[0].toString().trim()) {
+                    industryText = d.specialty[0];
+                } else if (d.specialty.toString().trim()) {
+                    industryText = d.specialty;
+                }
+            } else if (d.type && d.type.toString().trim()) {
+                industryText = d.type;
+            }
+            document.getElementById('sb-industry').innerText = industryText;
+            
+            // 处理occupation字段
+            let occupationText = '未知';
+            if (d.occupation && d.occupation.toString().trim()) {
+                if (Array.isArray(d.occupation) && d.occupation[0] && d.occupation[0].toString().trim()) {
+                    occupationText = d.occupation[0];
+                } else {
+                    occupationText = d.occupation;
+                }
+            }
+            document.getElementById('sb-occupation').innerText = occupationText;
+            
+            document.getElementById('sb-achievement').innerText = safeText(d.achievement, '暂无成就描述');
+            document.getElementById('sb-bio').innerText = safeText(d.description, safeText(d.achievement, '暂无描述'));
+            
+            // 更新标签
+            const tags=document.getElementById('sb-tags'); 
+            tags.innerHTML='';
+            const industry = Array.isArray(d.specialty) ? d.specialty[0] || d.type : d.specialty || d.type;
+            const occupation = Array.isArray(d.occupation) ? d.occupation[0] : d.occupation;
+            
+            if(industry) {
+                const s1=document.createElement('span'); 
+                s1.className="px-3 py-1 bg-white/5 text-[#E2E8F0] text-[10px] rounded-full border-white/10 font-light tracking-wide"; 
+                s1.innerText=industry; 
+                tags.appendChild(s1);
+            }
+            if(occupation && occupation !== industry) {
+                const s2=document.createElement('span'); 
+                s2.className="px-3 py-1 bg-white/5 text-[#E2E8F0] text-[10px] rounded-full border border-white/10 font-light tracking-wide"; 
+                s2.innerText=occupation; 
+                tags.appendChild(s2);
+            }
+
+            // 更新关联人列表
+            const connContainer = document.getElementById('sb-connections-list');
+            connContainer.innerHTML = '';
+            
+            connections.forEach(conn => {
+                const item = document.createElement('div');
+                item.className = "group flex items-center justify-between p-3 bg-white/5 rounded-lg hover:bg-white/10 transition cursor-pointer border border-transparent hover:border-white/10";
+                
+                // 使用从后端获取的关系描述，如果没有则使用默认值
+                let sharedText = conn.description || "精神共鸣";
+                
+                item.innerHTML = `
+                    <div>
+                        <div class="text-[#E2E8F0] text-sm font-medium group-hover:text-[#F2B6A0] transition">${conn.mesh.userData.name}</div>
+                        <div class="text-xs text-slate-500 mt-0.5">${sharedText}</div>
+                    </div>
+                    <i data-lucide="arrow-up-right" class="w-4 h-4 text-slate-600 group-hover:text-[#F2B6A0] transition"></i>
+                `;
+                item.addEventListener('click', (e) => { e.stopPropagation(); openNodeDetail(conn.mesh); });
+                connContainer.appendChild(item);
+            });
+            lucide.createIcons();
+        }
+
+        async function highlightNode(n) {
+            // --- 1. 重置所有节点状态 (保持不变) ---
+            nodeMeshes.forEach(m => {
+                m.material = (m.userData.type === 'healing') ? matHealing.clone() : matWarmth.clone();
+                if (m.userData.glow) {
+                    m.userData.glow.material = (m.userData.type === 'healing') ? glowHealing.clone() : glowWarmth.clone();
+                    gsap.to(m.userData.glow.scale, { x: m.userData.originalScale * 3.5, y: m.userData.originalScale * 3.5, duration: 0.5 });
+                }
+                gsap.to(m.scale, { x: m.userData.originalScale, y: m.userData.originalScale, z: m.userData.originalScale, duration: 0.5 });
+                if (m.userData.label) m.userData.label.element.classList.remove('active');
+            });
+
+            connectionLines.clear();
+            gsap.to(globalPulse, { value: 0, duration: 1.5 });
+
+            // --- 2. 高亮选中的节点 ---
+            n.material = matActive.clone();
+            if (n.userData.glow) n.userData.glow.material = glowActive.clone();
+            if (n.userData.label) n.userData.label.element.classList.add('active');
+
+            // --- 3. 改进的相机聚焦方案 ---
+            // 减小系数，防止靠得太近 (从 22.5 改为 12 左右)
+            const targetDist = n.userData.originalScale * 50.0; 
+            
+            const worldPos = new THREE.Vector3();
+            n.getWorldPosition(worldPos);
+
+            // 计算相机目标位置：在节点前方，并根据你的 offsetX 逻辑微调
+            // 这里的 0.3 是为了让节点在视觉上偏左，给右侧 UI 留空
+            const camTargetPos = new THREE.Vector3(
+                worldPos.x + (targetDist * 0.2), 
+                worldPos.y, 
+                worldPos.z + targetDist
+            );
+
+            // 使用 GSAP 同时移动相机位置和控制器的目标点
+            // 这样在动画结束后，你拖动鼠标将绕着新节点旋转
+            gsap.to(camera.position, {
+                x: camTargetPos.x,
+                y: camTargetPos.y,
+                z: camTargetPos.z,
+                duration: 1.2,
+                ease: "power2.inOut"
+            });
+
+            if (controls) {
+                gsap.to(controls.target, {
+                    x: worldPos.x,
+                    y: worldPos.y,
+                    z: worldPos.z,
+                    duration: 1.2,
+                    ease: "power2.inOut",
+                    onUpdate: () => controls.update() // 必须在每帧更新控制器
+                });
+            }
+
+            // --- 4. 获取连接关系与更新 UI (保持逻辑一致) ---
+            try {
+                const token = localStorage.getItem('access_token');
+                const response = await fetch(`http://localhost:8000/api/graph/nodes/${n.userData.id}/connections`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                let topNodes = [];
+                if (response.ok) {
+                    const connectionData = await response.json();
+                    const connections = connectionData.connections || [];
+                    const connectedMeshes = [];
+                    connections.forEach(conn => {
+                        const targetMesh = nodeMeshes.find(m => m.userData.id === conn.target_id);
+                        if (targetMesh) connectedMeshes.push({ mesh: targetMesh, score: conn.strength || 1 });
+                    });
+                    connectedMeshes.sort((a, b) => b.score - a.score);
+                    topNodes = connectedMeshes.slice(0, 7);
+                } else {
+                    topNodes = calculateLocalTopNodes(n);
+                }
+
+                drawConnections(n, topNodes);
+                updateSidebar(n.userData, topNodes);
+            } catch (error) {
+                const topNodes = calculateLocalTopNodes(n);
+                drawConnections(n, topNodes);
+                updateSidebar(n.userData, topNodes);
+            }
+        }
+
+        // 辅助函数：绘制连线
+        function drawConnections(sourceNode, topNodes) {
+            const lineMat = new THREE.LineBasicMaterial({ color: 0xdddddd, opacity: 0.5, transparent: true, blending: THREE.AdditiveBlending });
+            topNodes.forEach(item => {
+                const points = [sourceNode.position, item.mesh.position];
+                const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                const line = new THREE.Line(geometry, lineMat);
+                connectionLines.add(line);
+            });
+        }
+
+        // 辅助函数：本地计算备选
+        function calculateLocalTopNodes(n) {
+            const sourceData = n.userData;
+            const candidates = nodeMeshes.filter(m => m !== n).map(m => {
+                let score = 0;
+                const d = m.userData;
+                if (d.industry === sourceData.industry) score += 10;
+                if (d.occupation === sourceData.occupation) score += 8;
+                score += Math.random() * 2;
+                return { mesh: m, score: score };
+            });
+            candidates.sort((a, b) => b.score - a.score);
+            return candidates.slice(0, 7);
+        }
+
+        window.switchAuthMode = function(mode) {
+            const regStep = document.getElementById('step-1-account');
+            const loginStep = document.getElementById('step-login');
+            if(mode === 'login') {
+                regStep.classList.remove('fade-enter'); regStep.style.display = 'none';
+                loginStep.classList.remove('hidden'); loginStep.classList.add('fade-enter');
+            } else {
+                loginStep.classList.remove('fade-enter'); loginStep.classList.add('hidden');
+                regStep.style.display = 'block'; regStep.classList.add('fade-enter');
+            }
+        };
+
+        window.doLogin = async function() {
+            const email = document.querySelector('#step-login input[type="email"]').value;
+            const password = document.querySelector('#step-login input[type="password"]').value;
+            
+            if (!email || !password) {
+                alert("请输入邮箱和密码");
+                return;
+            }
+            
+            try {
+                // 调用后端登录API
+                const response = await fetch('http://localhost:8000/api/auth/login-json', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: email,
+                        password: password
+                    })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    // 保存token到localStorage
+                    localStorage.setItem('access_token', data.access_token);
+                    
+                    // 立即更新登录状态
+                    state.hasProfile = true;
+                    
+                    // 更新用户信息并显示个人主页
+                    await loadUserProfile();
+                    
+                    // 切换显示：隐藏表单，显示个人主页
+                    document.getElementById('pc-form-container').classList.add('hidden');
+                    document.getElementById('pc-view-container').classList.remove('hidden');
+                    
+                    // 登录成功后，保持个人中心打开状态，显示个人主页
+                    // 不需要自动关闭侧边栏
+                } else {
+                    const errorData = await response.json();
+                    alert(`登录失败: ${errorData.detail || '未知错误'}`);
+                }
+            } catch (error) {
+                console.error('登录错误:', error);
+                alert('登录失败，请检查网络连接');
+            }
+        };
+        
+        async function loadUserProfile() {
+            try {
+                const token = localStorage.getItem('access_token');
+                if (!token) return;
+                
+                const response = await fetch('http://localhost:8000/api/persons/me', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const userData = await response.json();
+                    
+                    // 更新个人中心显示
+                    document.getElementById('pv-name').innerText = userData.name || userData.full_name || '用户';
+                    document.getElementById('pv-info').innerText = `${userData.birth_year || '未知'} · ${Array.isArray(userData.occupation) ? userData.occupation[0] : userData.occupation || '未知职业'}`;
+                    document.getElementById('pv-achieve').innerText = userData.achievement || userData.description || '暂无成就描述';
+                    
+                    // 更新全局用户资料
+                    currentUserProfile = {
+                        name: userData.name || userData.full_name || '用户',
+                        year: userData.birth_year || '',
+                        industry: Array.isArray(userData.specialty) ? userData.specialty[0] : userData.specialty || '',
+                        job: Array.isArray(userData.occupation) ? userData.occupation[0] : userData.occupation || '',
+                        achieve: userData.achievement || userData.description || ''
+                    };
+                    
+                    // 更新状态
+                    state.hasProfile = true;
+                } else if (response.status === 404) {
+                    // 用户没有Person节点，这是正常情况，不抛出错误
+                    console.log('用户尚未创建Person节点');
+                    state.hasProfile = false;
+                } else {
+                    console.error('加载用户信息失败，状态码:', response.status);
+                }
+            } catch (error) {
+                console.error('加载用户信息失败:', error);
+            }
+        }
+        
+        window.createProfile = async function(){
+            const name = document.getElementById('inp-name').value || "User";
+            const year = document.getElementById('inp-year').value || "1995";
+            const industry = document.getElementById('inp-industry').value || "Design";
+            const job = document.getElementById('inp-job').value || "Architect";
+            const achieve = document.getElementById('inp-achieve').value || "...";
+
+            // 获取token
+            const token = localStorage.getItem('access_token');
+            if (!token) {
+                alert("请先登录");
+                return;
+            }
+
+            try {
+                // 调用后端API创建Person节点，设置type为'user'
+                const response = await fetch('http://localhost:8000/api/persons/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        name: name,
+                        birth_year: parseInt(year) || 1995,
+                        occupation: [job],
+                        specialty: [industry],
+                        achievement: achieve,
+                        type: 'user',  // 设置type为'user'，区分用户节点
+                        source_type: 'user_created',  // 设置source_type为用户创建
+                        description: achieve
+                    })
+                });
+
+                if (response.ok) {
+                    const personData = await response.json();
+                    
+                    // 更新显示
+                    document.getElementById('pv-name').innerText = name;
+                    document.getElementById('pv-info').innerText = `${year} · ${job}`;
+                    document.getElementById('pv-achieve').innerText = achieve;
+                    
+                    // 更新全局用户资料
+                    currentUserProfile = {
+                        name: name,
+                        year: year,
+                        industry: industry,
+                        job: job,
+                        achieve: achieve
+                    };
+                    
+                    // Hide Form
+                    document.getElementById('pc-form-container').classList.add('hidden');
+                    // Hide Sidebar completely for the animation
+                    document.getElementById('personal-center').classList.remove('active');
+
+                    // 1. Spawn Placeholder
+                    const ph = new THREE.Sprite(matPlaceholder);
+                    ph.position.set(0, 0, 100); 
+                    ph.scale.set(10, 10, 1);
+                    galaxyGroup.add(ph);
+
+                    // 2. Spawn Pending Label
+                    const d = document.createElement('div');
+                    d.className = 'pending-label';
+                    d.textContent = name;
+                    const labelObj = new THREE.CSS2DObject(d);
+                    labelObj.position.set(0, -7, 0);
+                    ph.add(labelObj);
+
+                    // Move camera to look at placeholder
+                    gsap.to(galaxyGroup.position, { x: 0, y: 0, z: 200, duration: 1.5, ease: "power2.inOut" });
+
+                    // 3. Animation Sequence
+                    setTimeout(() => {
+                        // Remove placeholder
+                        galaxyGroup.remove(ph);
+                        
+                        // Create Real Node - type保持为'user'，但使用橙色/粉色材质 (#F2B6A0)
+                        const s = new THREE.Mesh(sphereGeometry, matWarmth.clone()); 
+                        s.position.set(0, 0, 100); s.scale.set(0, 0, 0); // Start small
+                        const g = new THREE.Sprite(glowWarmth.clone());
+                        g.scale.set(30, 30, 1); s.add(g); s.userData.glow = g;
+                        
+                        s.userData = {
+                            id: personData.id,  // 使用后端返回的ID
+                            name: name, 
+                            type: 'user',  // 保持为'user'类型
+                            years: 'Present', 
+                            occupation: job, 
+                            industry: industry,
+                            originalScale: 10
+                        };
+                        
+                        galaxyGroup.add(s); 
+                        nodeMeshes.push(s); 
+                        state.userNodeId = s;
+                        state.hasProfile = true;
+
+                        // Add real label
+                        const nameDiv = document.createElement('div');
+                        nameDiv.className = 'node-label';
+                        nameDiv.textContent = name;
+                        const nameLabel = new THREE.CSS2DObject(nameDiv);
+                        nameLabel.position.set(0, -2.5, 0);
+                        s.add(nameLabel);
+                        s.userData.label = nameLabel;
+
+                        // Pop animation
+                        gsap.to(s.scale, { x: 10, y: 10, z: 10, duration: 1.0, ease: "elastic.out(1, 0.5)" });
+
+                        // 4. Zoom Out (Reset View)
+                        setTimeout(() => {
+                            resetView();
+                        }, 1500);
+
+                    }, 2000); // Wait 2s for "Finding coordinates" feel
+                } else {
+                    const errorData = await response.json();
+                    alert(`创建节点失败: ${errorData.detail || '未知错误'}`);
+                }
+            } catch (error) {
+                console.error('创建节点错误:', error);
+                alert('创建节点失败，请检查网络连接');
+            }
+        };
+
+        window.editProfile = function() {
+            document.getElementById('inp-name').value = currentUserProfile.name;
+            document.getElementById('inp-year').value = currentUserProfile.year;
+            document.getElementById('inp-industry').value = currentUserProfile.industry;
+            document.getElementById('inp-job').value = currentUserProfile.job;
+            document.getElementById('inp-achieve').value = currentUserProfile.achieve;
+            
+            document.getElementById('pc-view-container').classList.add('hidden');
+            document.getElementById('pc-form-container').classList.remove('hidden');
+            document.getElementById('step-1-account').style.display = 'none';
+            document.getElementById('step-login').classList.add('hidden');
+            document.getElementById('step-2-info').classList.remove('hidden');
+            document.getElementById('step-2-info').classList.add('fade-enter');
+        };
+
+        function openSearchMode(){
+            state.view='search'; state.search.active=true;
+            document.getElementById('node-sidebar').classList.add('active');
+            document.getElementById('sidebar-search-header').classList.remove('hidden');
+            document.getElementById('sidebar-content').classList.add('hidden');
+            document.getElementById('search-placeholder').style.display='flex';
+            setTimeout(()=>document.getElementById('search-placeholder').style.opacity='1',100);
+            document.getElementById('search-input').focus();
+            
+            nodeMeshes.forEach(m=>{ 
+                gsap.killTweensOf(m.scale); m.material.transparent = true; m.material.opacity = 0.1;
+                if(m.userData.glow) m.userData.glow.material.opacity = 0.05;
+            }); 
+            connectionLines.clear(); 
+            gsap.to(galaxyGroup.position, { x: -200, z: 100, duration: 1.5 });
+            elLegend.classList.add('opacity-0', 'translate-y-4'); 
+        }
+
+        function exitSearchMode(){
+            state.view='node-detail';
+            document.getElementById('sidebar-search-header').classList.add('hidden');
+            document.getElementById('sidebar-content').classList.remove('hidden');
+            document.getElementById('pagination-controls').classList.remove('active');
+            document.getElementById('pagination-controls').style.opacity = '0';
+            nodeMeshes.forEach(m=>{
+                m.material.opacity = 0.95;
+                m.material = (m.userData.type==='healing') ? matHealing.clone() : matWarmth.clone();
+                if(m.userData.glow) m.userData.glow.material.opacity = 1;
+            });
+        }
+
+        async function performSearch(v){
+            if(!v.trim()) return;
+            
+            try {
+                // 使用原始API搜索节点
+                const token = localStorage.getItem('access_token');
+                const response = await fetch(`http://localhost:8000/api/graph/nodes/search?q=${encodeURIComponent(v)}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                const searchResults = await response.json();
+                
+                state.search.results = searchResults;
+                state.search.currentIndex = 0;
+                
+                if(state.search.results.length > 0) {
+                    document.getElementById('search-placeholder').style.display='none';
+                    document.getElementById('sidebar-content').classList.remove('hidden');
+                    document.getElementById('pagination-controls').classList.add('active');
+                    document.getElementById('pagination-controls').style.opacity = '1';
+                    updateSearchResultsUI();
+                }
+            } catch (error) {
+                console.error('Search failed:', error);
+                // 备选：使用本地nodesData进行搜索
+                state.search.results = nodesData.filter(n => 
+                    n.name && n.name.toLowerCase().includes(v.toLowerCase()) || 
+                    (n.industry && n.industry.includes(v))
+                );
+                state.search.currentIndex = 0;
+                
+                if(state.search.results.length > 0) {
+                    document.getElementById('search-placeholder').style.display='none';
+                    document.getElementById('sidebar-content').classList.remove('hidden');
+                    document.getElementById('pagination-controls').classList.add('active');
+                    document.getElementById('pagination-controls').style.opacity = '1';
+                    updateSearchResultsUI();
+                }
+            }
+        }
+        function navSearch(d){
+            const t=state.search.results.length; if(t===0) return;
+            state.search.currentIndex=(state.search.currentIndex+d+t)%t;
+            updateSearchResultsUI();
+        }
+        function updateSearchResultsUI(){
+            const cur=state.search.currentIndex; const d=state.search.results[cur];
+            document.getElementById('page-current').innerText=cur+1; document.getElementById('page-total').innerText=state.search.results.length;
+            const m=nodeMeshes.find(x=>x.userData.id===d.id);
+            if(m){ highlightNode(m); }
+        }
+
+        async function openPersonalCenter(){
+            state.view='personal-center';
+            document.getElementById('node-sidebar').classList.remove('active');
+            gsap.to(galaxyGroup.position, { x: -400, z: 0, duration: 1.5 });
+            document.getElementById('personal-center').classList.add('active');
+            elLegend.classList.add('opacity-0', 'translate-y-4'); 
+            
+            // 首先检查是否有token
+            const token = localStorage.getItem('access_token');
+            
+            if (!token) {
+                // 没有token，显示注册表单（默认）
+                document.getElementById('pc-form-container').classList.remove('hidden');
+                document.getElementById('pc-view-container').classList.add('hidden');
+                switchAuthMode('register');  // 默认显示注册表单
+                document.getElementById('step-2-info').classList.add('hidden');
+                return;
+            }
+            
+            // 有token，检查用户状态
+            if (state.hasProfile) {
+                // 如果已经有个人资料，直接显示个人主页
+                document.getElementById('pc-form-container').classList.add('hidden');
+                document.getElementById('pc-view-container').classList.remove('hidden');
+                return;
+            }
+            
+            // 有token但没有个人资料状态，尝试获取个人资料
+            try {
+                const response = await fetch('http://localhost:8000/api/persons/me', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const userData = await response.json();
+                    
+                    // 更新个人中心显示
+                    document.getElementById('pv-name').innerText = userData.name;
+                    document.getElementById('pv-info').innerText = `${userData.birth_year || '未知'} · ${Array.isArray(userData.occupation) ? userData.occupation[0] : userData.occupation || '未知职业'}`;
+                    document.getElementById('pv-achieve').innerText = userData.achievement || userData.description || '暂无成就描述';
+                    
+                    document.getElementById('pc-form-container').classList.add('hidden');
+                    document.getElementById('pc-view-container').classList.remove('hidden');
+                    
+                    // 更新全局用户资料
+                    currentUserProfile = {
+                        name: userData.name,
+                        year: userData.birth_year || '',
+                        industry: Array.isArray(userData.specialty) ? userData.specialty[0] : userData.specialty || '',
+                        job: Array.isArray(userData.occupation) ? userData.occupation[0] : userData.occupation || '',
+                        achieve: userData.achievement || userData.description || ''
+                    };
+                    
+                    // 更新状态
+                    state.hasProfile = true;
+                } else if (response.status === 404) {
+                    // 用户没有Person节点，显示注册第二步（个人信息填写）
+                    console.log('用户尚未创建Person节点，显示注册第二步');
+                    document.getElementById('pc-form-container').classList.remove('hidden');
+                    document.getElementById('pc-view-container').classList.add('hidden');
+                    // 显示第二步表单
+                    document.getElementById('step-1-account').style.display = 'none';
+                    document.getElementById('step-login').classList.add('hidden');
+                    document.getElementById('step-2-info').classList.remove('hidden');
+                    document.getElementById('step-2-info').classList.add('fade-enter');
+                    
+                    // 自动填充邮箱（从token中获取）
+                    try {
+                        const tokenData = JSON.parse(atob(token.split('.')[1]));
+                        document.getElementById('display-email').value = tokenData.sub || '已登录用户';
+                        
+                        // 自动填充一些默认信息
+                        const defaultName = tokenData.sub.split('@')[0];
+                        document.getElementById('inp-name').value = defaultName;
+                        document.getElementById('inp-year').value = "1995";
+                        document.getElementById('inp-industry').value = "科技";
+                        document.getElementById('inp-job').value = "开发者";
+                        document.getElementById('inp-achieve').value = "刚刚加入Find My Brilliant Friends，期待在这里找到共鸣";
+                    } catch (e) {
+                        document.getElementById('display-email').value = '已登录用户';
+                    }
+                } else {
+                    // 其他错误，显示注册表单
+                    console.error('获取个人资料失败，状态码:', response.status);
+                    document.getElementById('pc-form-container').classList.remove('hidden');
+                    document.getElementById('pc-view-container').classList.add('hidden');
+                    switchAuthMode('register');
+                    document.getElementById('step-2-info').classList.add('hidden');
+                }
+            } catch (error) {
+                console.error('打开个人中心失败:', error);
+                // 如果API调用失败，显示注册表单
+                document.getElementById('pc-form-container').classList.remove('hidden');
+                document.getElementById('pc-view-container').classList.add('hidden');
+                switchAuthMode('register');
+                document.getElementById('step-2-info').classList.add('hidden');
+            }
+        }
+
+        function resetView(){
+            state.view='home';
+            document.getElementById('node-sidebar').classList.remove('active');
+            document.getElementById('personal-center').classList.remove('active');
+            if(state.search.active) exitSearchMode();
+            
+            // 重置星系组位置
+            gsap.to(galaxyGroup.position, { x: 0, y: 0, z: 0, duration: 1.5, ease: "power2.out" });
+            gsap.to(galaxyGroup.scale, { x: 1, y: 1, z: 1, duration: 1.5, ease: "power2.out" });
+            
+            // 重置相机位置到原始位置
+            gsap.to(camera.position, { 
+                x: 0, 
+                y: 0, 
+                z: 850,  // 相机的原始z位置
+                duration: 1.5, 
+                ease: "power2.out" 
+            });
+            
+            connectionLines.clear();
+            
+            gsap.to(globalPulse, { value: 1.0, duration: 1.5, ease: "power2.inOut" });
+
+            nodeMeshes.forEach(m=>{ 
+                m.material = (m.userData.type==='healing') ? matHealing.clone() : matWarmth.clone();
+                m.scale.set(m.userData.originalScale,m.userData.originalScale,m.userData.originalScale); 
+                if(m.userData.glow) {
+                    m.userData.glow.material = (m.userData.type==='healing') ? glowHealing.clone() : glowWarmth.clone();
+                    gsap.to(m.userData.glow.scale, { x: m.userData.originalScale * 3.5, y: m.userData.originalScale * 3.5 });
+                }
+                if(m.userData.label) m.userData.label.element.classList.remove('active');
+            });
+            elLegend.classList.remove('opacity-0', 'translate-y-4'); 
+        }
+
+        window.goToStep2 = async function() {
+            const email = document.getElementById('reg-email').value;
+            const pass = document.getElementById('reg-pass').value;
+            
+            // 邮箱格式验证
+            if(!email || !pass) { 
+                alert("请输入邮箱和密码以继续"); 
+                return; 
+            }
+            
+            // 简单的邮箱格式验证
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(email)) {
+                alert("请输入有效的邮箱地址（例如：name@example.com）");
+                return;
+            }
+            
+            // 密码长度验证
+            if (pass.length < 6) {
+                alert("密码长度至少为6位");
+                return;
+            }
+            
+            try {
+                // 先注册账号
+                const registerResponse = await fetch('http://localhost:8000/api/auth/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: email,
+                        password: pass,
+                        full_name: email.split('@')[0] // 使用邮箱前缀作为默认名称
+                    })
+                });
+                
+                if (registerResponse.ok) {
+                    // 注册成功后自动登录
+                    const loginResponse = await fetch('http://localhost:8000/api/auth/login-json', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            email: email,
+                            password: pass
+                        })
+                    });
+                    
+                    if (loginResponse.ok) {
+                        const loginData = await loginResponse.json();
+                        // 保存token到localStorage
+                        localStorage.setItem('access_token', loginData.access_token);
+                        
+                        // 根据需求，注册后自动生成Person节点
+                        // 这里可以自动填充一些默认信息，然后让用户确认
+                        document.getElementById('step-1-account').style.display = 'none';
+                        const step2 = document.getElementById('step-2-info');
+                        step2.classList.remove('hidden'); 
+                        step2.classList.add('fade-enter');
+                        document.getElementById('display-email').value = email;
+                        
+                        // 自动填充一些默认信息
+                        const defaultName = email.split('@')[0];
+                        document.getElementById('inp-name').value = defaultName;
+                        document.getElementById('inp-year').value = "1995";
+                        document.getElementById('inp-industry').value = "科技";
+                        document.getElementById('inp-job').value = "开发者";
+                        document.getElementById('inp-achieve').value = "刚刚加入Find My Brilliant Friends，期待在这里找到共鸣";
+                    } else {
+                        const errorData = await loginResponse.json();
+                        alert(`自动登录失败: ${errorData.detail || '未知错误'}`);
+                    }
+                } else {
+                    const errorData = await registerResponse.json();
+                    alert(`注册失败: ${errorData.detail || '未知错误'}`);
+                }
+            } catch (error) {
+                console.error('注册流程错误:', error);
+                alert('注册失败，请检查网络连接');
+            }
+        };
+        window.backToStep1 = function() {
+            document.getElementById('step-2-info').classList.add('hidden');
+            const step1 = document.getElementById('step-1-account');
+            step1.style.display = 'block'; step1.classList.add('fade-enter');
+        };
+
+        const clock = new THREE.Clock();
+
+        function animate(){
+            requestAnimationFrame(animate);
+            const time = clock.getElapsedTime();
+
+            nodeMeshes.forEach((mesh, i) => {
+                if (!mesh.userData.originalY) mesh.userData.originalY = mesh.position.y;
+                mesh.position.y = mesh.userData.originalY + Math.sin(time * 0.5 + mesh.userData.phase) * 5 * globalPulse.value;
+            });
+
+            if(state.view!=='search' && !isDragging && !hoveredNode) {
+                galaxyGroup.rotation.y += 0.00015 * globalPulse.value; 
+            }
+
+            connectionLines.children.forEach(line => {
+                if(line.userData.source && line.userData.target) {
+                    const positions = line.geometry.attributes.position.array;
+                    const src = line.userData.source.position;
+                    const tgt = line.userData.target.position;
+                    positions[0] = src.x; positions[1] = src.y; positions[2] = src.z;
+                    positions[3] = tgt.x; positions[4] = tgt.y; positions[5] = tgt.z;
+                    line.geometry.attributes.position.needsUpdate = true;
+                }
+            });
+
+            nodeMeshes.forEach(mesh => {
+                if (mesh.userData.label) {
+                    tempV.setFromMatrixPosition(mesh.matrixWorld);
+                    const dist = tempV.distanceTo(camera.position);
+                    if (tempV.z > -100 && dist < 1000) { 
+                        mesh.userData.label.element.classList.remove('label-hidden');
+                        mesh.userData.label.element.style.opacity = Math.max(0.2, 1 - dist/1000);
+                    } else {
+                        mesh.userData.label.element.classList.add('label-hidden');
+                    }
+                }
+            });
+
+            if(state.view==='home'){
+                raycaster.setFromCamera(mouse,camera); const ints=raycaster.intersectObjects(nodeMeshes);
+                if(ints.length>0 && hoveredNode!==ints[0].object){
+                    hoveredNode=ints[0].object; document.getElementById('tt-name').innerText=hoveredNode.userData.name; document.body.style.cursor='pointer';
+                    document.getElementById('tooltip').style.opacity='1';
+                } else if(ints.length===0 && hoveredNode){ hoveredNode=null; document.body.style.cursor='default'; document.getElementById('tooltip').style.opacity='0'; }
+            }
+            renderer.render(scene,camera); labelRenderer.render(scene,camera);
+        }
+        
+        window.onload=()=>{ setTimeout(()=>{document.getElementById('loading-screen').style.opacity='0'; setTimeout(()=>document.getElementById('loading-screen').remove(),2000);},1000); animate(); };
+        window.onresize=()=>{ 
+            camera.aspect=window.innerWidth/window.innerHeight; 
+            camera.updateProjectionMatrix(); 
+            renderer.setSize(window.innerWidth,window.innerHeight); 
+            labelRenderer.setSize(window.innerWidth,window.innerHeight); 
+        };
+
+        // // --- 滚轮缩放逻辑开始 ---
+        // const zoomConfig = {
+        //     min: 200,    // 最近缩放距离
+        //     max: 1500,   // 最远缩放距离
+        //     speed: 0.1   // 缩放灵敏度
+        // };
+
+        // window.addEventListener('wheel', (event) => {
+        //     // 阻止页面整体滚动（如果页面有滚动条的话）
+        //     // event.preventDefault(); 
+
+        //     // 计算新的 Z 轴位置
+        //     let newZ = camera.position.z + event.deltaY * zoomConfig.speed;
+
+        //     // 应用边界限制
+        //     camera.position.z = Math.max(zoomConfig.min, Math.min(zoomConfig.max, newZ));
+        // }, { passive: true });
+        // // --- 滚轮缩放逻辑结束 ---
+    </script>
+</body>
+</html>
+    </script>
+</body>
+</html>
